@@ -1,4 +1,4 @@
 streamlit
-git+https://github.com/CloudKarya/ralf.git
+git+https://github.com/peeya-i/ralf.git
 pandas
 openai
