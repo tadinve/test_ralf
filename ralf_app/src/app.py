@@ -18,6 +18,8 @@ st.markdown(
 # Create sidebar tabs
 tab_names = ["Setup", "Recommendation", "Augment", "Lock-In", "Future-Proof"]
 selected_tab = st.sidebar.radio("Navigation", tab_names)
+ralf = Ralf( HF_TOKEN="abc", OPENAI_API_KEY="abc")
+
 if selected_tab == "Setup":
     st.header("Setup")
 
