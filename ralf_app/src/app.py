@@ -18,20 +18,17 @@ st.markdown(
 # Create sidebar tabs
 tab_names = ["Setup", "Recommendation", "Augment", "Lock-In", "Future-Proof"]
 selected_tab = st.sidebar.radio("Navigation", tab_names)
-ralf = Ralf( HF_TOKEN="abc", OPENAI_API_KEY="abc")
-
 if selected_tab == "Setup":
     st.header("Setup")
 
     # API Key Inputs
-    openai_key = st.text_input("Enter your OPENAI_API_KEY", type="password", key="openai_key")
-    gemini_key = st.text_input("Enter your GEMINI_API_KEY", type="password", key="gemini_key")
-    hf_token = st.text_input("Enter your HF_TOKEN", type="password", key="hf_token")
-   
+    st.session_state["openaiKey"] = st.text_input("Enter your OPENAI_API_KEY", type="password", key="openai_key")
+    st.session_state["geminiKey"] = st.text_input("Enter your GEMINI_API_KEY", type="password", key="gemini_key")
+    st.session_state["hfToken"] = st.text_input("Enter your HF_TOKEN", type="password", key="hf_token")
+
     show_sysinfo = False
     if st.button("Get System Info"):
-        if openai_key:
-            ralf = Ralf(OPENAI_API_KEY=openai_key, GEMINI_API_KEY=gemini_key, HF_TOKEN=hf_token)
+        if st.session_state["openaiKey"]:
             show_sysinfo = True
         else:
             st.warning("Please enter your OPENAI_API_KEY.")
@@ -74,48 +71,49 @@ elif selected_tab == "Recommendation":
         csv_file = st.session_state["uploaded_file"]    
         columns = df.columns.tolist()
 
-        source_col, target_col = "source", "target"
+        # source_col, target_col = "source", "target"
+        ralf = Ralf( OPENAI_API_KEY=st.session_state["openaiKey"],
+                     GEMINI_API_KEY=st.session_state["geminiKey"],
+                     HF_TOKEN=st.session_state["hfToken"] )
         analysis = ralf.analyze_problem_type(df, source_col, target_col)
 
         # Display the stored results
-        display(Markdown(f"# Recommendation Results for {csv_file}:"))
+        print(f"# Analysis Results for {csv_file}:")
 
-        display(Markdown("## Problem Type Analysis"))
+        st.write("## Problem Type Analysis")
         if isinstance(analysis, dict):
             types = analysis.get('types', [])
-            display(Markdown(f"**Types:** {', '.join(types)}"))
-            display(Markdown("**Reasoning:**"))
-            display(Markdown(analysis.get("reasoning", "No reasoning provided.")))
+            st.write(f"**Types:** {', '.join(types)}")
+            st.write("**Reasoning:**")
+            st.write(analysis.get("reasoning", "No reasoning provided."))
 
         llm_recommendations_df, dataset_recommendation_df, analysis_result = ralf.recommend(
             input_csv_file=csv_file,
             source_col=source_col,
-            target_col=target_col)
+            target_col=target_col,
+            analysis=analysis
+        )
 
-        print("\nRecommended Open Source LLMs for Fine-tuning:")
-        display(llm_recommendations_df)
+        st.write("\n**Recommended Open Source LLMs for Fine-tuning:**")
+        st.write(llm_recommendations_df)
 
-        print("\nRecommended Golden Dataset:")
-        display(dataset_recommendation_df)
+        st.write("\n**Recommended Golden Dataset:**")
+        st.write(dataset_recommendation_df)
 
-        print("\nProblem Type Analysis:")
-        if isinstance(analysis_result, dict):
-            display(Markdown(f"**Types:** {', '.join(analysis_result.get('types', []))}"))
-            display(Markdown("**Reasoning:**"))
-            display(Markdown(analysis_result.get("reasoning", "No reasoning provided.")))
-        else:
-            display(Markdown(analysis_result))
     else:
         st.info("Please complete the Setup tab first.")
 
 elif selected_tab == "Augment":
+    print("Entering Augment")
     st.header("Augment")
     st.write("Augmentation features coming soon.")
 
 elif selected_tab == "Lock-In":
+    print("Entering Lock0In")
     st.header("Lock-In")
     st.write("Lock-In features coming soon.")
 
 elif selected_tab == "Future-Proof":
+    print("Entering Future-Proof")
     st.header("Future-Proof")
     st.write("Future-Proof features coming soon.")

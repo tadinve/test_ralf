@@ -1,4 +1,8 @@
 streamlit
-git+https://github.com/peeya-i/ralf.git
 pandas
+scikit-learn
+datasets
+evaluate
 openai
+psutil
+transformers
