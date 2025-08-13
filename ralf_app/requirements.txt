@@ -6,3 +6,6 @@ evaluate
 openai
 psutil
 transformers
+humanize
+google-generativeai
+nltk

@@ -1,119 +1,319 @@
 import streamlit as st
 import pandas as pd
-import ralf  # Assuming ralf is installed and importable
-import openai  # Ensure openai is installed and importable
-from openai import OpenAI
-import os
-import json
-import re
 from ralf import Ralf
+import os
+# import torch
+import psutil
+import humanize
+import json
 
-# Banner title at the top center
-st.markdown(
-    """
-    <h1 style='text-align: center; color: #2c3e50; margin-bottom: 2rem;'>RALF Dashboard</h1>
-    """,
-    unsafe_allow_html=True
+st.set_page_config(
+    page_title="RALF - Resource-Aware LLM Finetuning",
+    page_icon="🤖",
+    layout="wide"
 )
-# Create sidebar tabs
-tab_names = ["Setup", "Recommendation", "Augment", "Lock-In", "Future-Proof"]
-selected_tab = st.sidebar.radio("Navigation", tab_names)
-if selected_tab == "Setup":
-    st.header("Setup")
 
-    # API Key Inputs
-    st.session_state["openaiKey"] = st.text_input("Enter your OPENAI_API_KEY", type="password", key="openai_key")
-    st.session_state["geminiKey"] = st.text_input("Enter your GEMINI_API_KEY", type="password", key="gemini_key")
-    st.session_state["hfToken"] = st.text_input("Enter your HF_TOKEN", type="password", key="hf_token")
+# ---------------------- STYLES ----------------------
+st.markdown("""
+    <style>
+    .main { padding: 2rem; }
+    .stButton button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        background-color: #4CAF50;
+        color: white;
+    }
+    .success-message {
+        padding: 1rem;
+        border-radius: 5px;
+        background-color: #DFF2BF;
+        color: #4F8A10;
+    }
+    .error-message {
+        padding: 1rem;
+        border-radius: 5px;
+        background-color: #FFE8E6;
+        color: #D8000C;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-    show_sysinfo = False
-    if st.button("Get System Info"):
-        if st.session_state["openaiKey"]:
-            show_sysinfo = True
+# ---------------------- SYSTEM INFO ----------------------
+def get_system_info():
+#    gpu_available = torch.cuda.is_available()
+#    gpu_info = f"{torch.cuda.get_device_name(0)}" if gpu_available else "No GPU"
+#    gpu_memory = f"{torch.cuda.get_device_properties(0).total_memory/1024**3:.2f} GB" if gpu_available else "N/A"
+    gpu_available = False
+    gpu_info = "N/A"
+    gpu_memory = "N/A"
+    ram = humanize.naturalsize(psutil.virtual_memory().total)
+    return {
+        "GPU Available": "✅ Yes" if gpu_available else "❌ No",
+        "GPU Model": gpu_info,
+        "GPU Memory": gpu_memory,
+        "System RAM": ram
+    }
+
+# ---------------------- MAIN ----------------------
+def main():
+    st.title("🤖 RALF - Resource-Aware LLM Finetuning")
+
+    # Sidebar
+    with st.sidebar:
+        st.markdown("## 🖥️ System Information")
+        sys_info = get_system_info()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(label="GPU", value=sys_info["GPU Available"])
+            st.metric(label="GPU Memory", value=sys_info["GPU Memory"])
+        with col2:
+            st.metric(label="GPU Model", value=sys_info["GPU Model"])
+            st.metric(label="System RAM", value=sys_info["System RAM"])
+
+        st.markdown("---")
+        st.header("API Configuration")
+        hf_token = st.text_input("Hugging Face Token", type="password")
+        api_choice = st.radio("Choose API for Recommendations", ["OpenAI", "Gemini"])
+        if api_choice == "OpenAI":
+            openai_key = st.text_input("OpenAI API Key", type="password")
+            gemini_key = None
         else:
-            st.warning("Please enter your OPENAI_API_KEY.")
+            gemini_key = st.text_input("Gemini API Key", type="password")
+            openai_key = None
 
-    if show_sysinfo:
-        # Display Ralf system info
-        st.subheader("System Information")
-        st.write(f"**GPU Available:** {getattr(ralf, 'gpu_available', 'Unknown')}")
-        st.write(f"**GPU RAM (GB):** {getattr(ralf, 'gpu_ram_gb', 'Unknown')}")
-        st.write(f"**System RAM (GB):** {getattr(ralf, 'ram_gb', 'Unknown')}")
+        if st.button("Validate Credentials"):
+            if not hf_token:
+                st.error("Please provide a Hugging Face token")
+            elif api_choice == "OpenAI" and not openai_key:
+                st.error("Please provide an OpenAI API key")
+            elif api_choice == "Gemini" and not gemini_key:
+                st.error("Please provide a Gemini API key")
+            else:
+                try:
+                    ralf = Ralf(HF_TOKEN=hf_token,
+                                OPENAI_API_KEY=openai_key,
+                                GEMINI_API_KEY=gemini_key)
+                    st.success("Credentials validated successfully!")
+                    st.session_state['credentials_valid'] = True
+                except Exception as e:
+                    st.error(f"Validation failed: {str(e)}")
+                    st.session_state['credentials_valid'] = False
+
+        st.markdown("---")
+        st.header("Data Upload")
+        uploaded_file = st.file_uploader("Upload your dataset (CSV)", type=['csv'])
+        if uploaded_file is not None:
+            try:
+                df = pd.read_csv(uploaded_file)
+                if df.empty:
+                    st.error("The uploaded CSV file is empty")
+                else:
+                    st.write(f"File size: {uploaded_file.size/1024:.2f} KB")
+                    st.write(f"Number of rows: {len(df)}")
+                    st.write(f"Number of columns: {len(df.columns)}")
+                    st.session_state['df'] = df
+            except Exception as e:
+                st.error(f"Error reading CSV file: {str(e)}")
+
+    # Tabs
+    tabs = st.tabs(["Analysis", "Recommendation", "Augmentation", "Lustration", "Futureproofing"])
+
+    # ---------------------- ANALYSIS TAB ----------------------
+    with tabs[0]:
+        st.header("Dataset Analysis")
+        if 'df' in st.session_state:
+            st.subheader("Data Preview")
+            st.dataframe(st.session_state['df'].head())
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.session_state['source_col'] = st.selectbox(
+                    "Select source column",
+                    st.session_state['df'].columns
+                )
+            with col2:
+                st.session_state['target_col'] = st.selectbox(
+                    "Select target column",
+                    [col for col in st.session_state['df'].columns if col != st.session_state['source_col']]
+                )
+
+            # Data cleaning (moved from Lustration tab)
+            st.subheader("Data Cleaning")
+            remove_nulls = st.checkbox("Remove rows with missing values")
+            lowercase_text = st.checkbox("Convert text to lowercase")
+            remove_duplicates = st.checkbox("Remove duplicate rows")
+
+            if st.button("Clean Data"):
+                try:
+                    cleaned_df = st.session_state['df'].copy()
+                    if remove_nulls:
+                        cleaned_df.dropna(inplace=True)
+                    if lowercase_text:
+                        cleaned_df[st.session_state['source_col']] = cleaned_df[st.session_state['source_col']].str.lower()
+                        cleaned_df[st.session_state['target_col']] = cleaned_df[st.session_state['target_col']].str.lower()
+                    if remove_duplicates:
+                        cleaned_df.drop_duplicates(inplace=True)
+                    st.session_state['df'] = cleaned_df
+                    st.success("Data cleaned successfully!")
+                    st.dataframe(cleaned_df.head())
+                except Exception as e:
+                    st.error(f"Error during data cleaning: {str(e)}")
+        else:
+            st.info("Please upload your dataset in the sidebar first.")
+
+    # ---------------------- RECOMMENDATION TAB ----------------------
+    with tabs[1]:
+        st.header("Model Recommendation")
+        if 'df' in st.session_state and 'credentials_valid' in st.session_state:
+            if st.button("Analyze Dataset"):
+                with st.spinner("Analyzing dataset..."):
+                    try:
+                        temp_csv_path = "temp_dataset.csv"
+                        st.session_state['df'].to_csv(temp_csv_path, index=False)
+                        ralf = Ralf(HF_TOKEN=hf_token,
+                                    OPENAI_API_KEY=openai_key,
+                                    GEMINI_API_KEY=gemini_key)
+                        llm_df, dataset_df, analysis = ralf.recommend(
+                            temp_csv_path,
+                            st.session_state['source_col'],
+                            st.session_state['target_col']
+                        )
+                        os.remove(temp_csv_path)
+                        st.session_state['llm_df'] = llm_df
+                        st.session_state['dataset_df'] = dataset_df
+                        st.session_state['analysis'] = analysis
+                        st.success("Analysis complete! Check model recommendations below.")
+                    except Exception as e:
+                        st.error(f"Error during analysis: {str(e)}")
+
+        if 'analysis' in st.session_state:
+            st.subheader("🧠 Problem Analysis")
+            raw_analysis = st.session_state['analysis']
+            if isinstance(raw_analysis, str):
+                try:
+                    analysis = json.loads(raw_analysis)
+                except json.JSONDecodeError:
+                    analysis = {"reasoning": raw_analysis}
+            else:
+                analysis = raw_analysis
+            st.markdown(f"**📝 Task Type:** `{analysis.get('types', ['Not specified'])[0]}`")
+            st.info(analysis.get("reasoning", "No reasoning provided"))
+
+        if 'llm_df' in st.session_state and not st.session_state['llm_df'].empty:
+            st.subheader("Recommended Models")
+            llm_df = st.session_state['llm_df'].copy()
+            if "Name" in llm_df.columns and "Hugging Face URL" in llm_df.columns:
+                llm_df["Name"] = llm_df.apply(
+                    lambda row: f'<a href="{row["Hugging Face URL"]}" target="_blank">{row["Name"]}</a>'
+                    if pd.notnull(row["Hugging Face URL"]) and pd.notnull(row["Name"]) else row["Name"], axis=1
+                )
+            llm_df.insert(0, "S.No", range(1, len(llm_df) + 1))
+            display_df = llm_df[["S.No", "Name", "Parameters", "Description"]]
+            st.markdown(llm_df.to_html(escape=False, index=False), unsafe_allow_html=True)
 
 
-    uploaded_file = st.file_uploader("Upload your platinum (CSV) dataset", type=["csv"])
-    if uploaded_file:
-        st.info("File uploaded, reading into DataFrame...")
-        with st.spinner("Reading CSV file..."):
-            df = pd.read_csv(uploaded_file)
-        st.success("File loaded!")
-        st.write("Preview of uploaded data:", df.head())
+    # Augmentation Tab
+    with tabs[2]:
+        st.header("Data Augmentation")
+        if 'df' in st.session_state:
+            df = st.session_state['df']
+            st.subheader("Original Dataset")
+            st.dataframe(df.head())
+            st.markdown("### Augmentation Options")
+            aug_type = st.selectbox(
+                "Select augmentation type",
+                ["Synonym Replacement", "Back Translation", "Random Swap"])
+            num_aug = st.slider("Number of augmented examples per orginal", 1, 5, 2)
+            if st.button("Apply Augmentation"):
+                try:
+                    with st.spinner("Applying augmentation..."):
+                        augmented_df = df.copy()
+                        augmented_df["augmented_text"] = df[st.session_state['source_col']] + " (augmented)"
+                        st.session_state['augmented_df'] = augmented_df
+                        st.success("Augmentation applied successfully!")
+                        st.dataframe(augmented_df.head())
+                except Exception as e:
+                    st.error(f"Error during augmentation: {str(e)}")
+            else:
+                st.info("Please upload and analyze your dataset first to apply augmentation.")
+    with tabs[3]:
+        st.header("Data Lustration(Cleaning & Preprocessing)")
+        #if 'df' in st.session_state:
+            #df = st.session_state['df']
+            #st.write("Original Dataset:")
+            #st.dataframe(df.head())
+            #remove_nulls = st.checkbox("Remove rows with missing values")
+            #lowercase_text = st.checkbox("Convert text to lowercase")
+            #remove_duplicates = st.checkbox("Remove duplicate rows")
+            #if st.button("Clean Data"):
+                #try:
+                    #cleaned_df = df.copy()
+                    #if remove_nulls:
+                        #cleaned_df.dropna(inplace=True)
+                    #if lowercase_text:
+                        #cleaned_df[st.session_state['source_col']] = cleaned_df[st.session_state['source_col']].str.lower()
+                        #cleaned_df[st.session_state['target_col']] = cleaned_df[st.session_state['target_col']].str.lower()
+                    #if remove_duplicates:
+                        #cleaned_df.drop_duplicates(inplace=True)
+                    #st.session_state['cleaned_df'] = cleaned_df
+                    #st.success("Data cleaned successfully!")
+                    #st.dataframe(cleaned_df.head())
+                #except Exception as e:
+                    #st.error(f"Error during data cleaning: {str(e)}")
+            #else:
+                #st.info("Please upload and analyze your dataset first to apply lustration.")
 
-        # Step 2: Select source and target columns
-        columns = df.columns.tolist()
-        source_col = st.selectbox("Select source column", columns)
-        target_col = st.selectbox("Select target column", columns)
 
-        # Store selections in session state for use in other tabs
-        st.session_state["df"] = df
-        st.session_state["source_col"] = source_col
-        st.session_state["target_col"] = target_col
-        st.session_state["uploaded_file"] = uploaded_file
-        uploaded_file
 
-elif selected_tab == "Recommendation":
-    st.header("Recommendation")
-    uploaded_file = st.session_state.get("uploaded_file", None)
-    if "df" in st.session_state and "source_col" in st.session_state and "target_col" in st.session_state:
-        df = st.session_state["df"]
-        source_col = st.session_state["source_col"]
-        target_col = st.session_state["target_col"]
-        csv_file = st.session_state["uploaded_file"]    
-        columns = df.columns.tolist()
+    # Training Tab
+    with tabs[4]:
+        st.header("Model Futureproofing")
+        if 'selected_models' in st.session_state:
+            col1, col2 = st.columns(2)
+            with col1:
+                epochs = st.number_input("Number of epochs", min_value=1, value=3)
+                batch_size = st.number_input("Batch size", min_value=1, value=16)
+                st.session_state['epochs'] = epochs
+                st.session_state['batch_size'] = batch_size
+            with col2:
+                learning_rate = st.number_input("Learning rate", min_value=0.0, value=2e-5)
+                output_dir = st.text_input("Output directory", value="./results")
+                st.session_state['learning_rate'] = learning_rate
+                st.session_state['output_dir'] = output_dir
 
-        # source_col, target_col = "source", "target"
-        ralf = Ralf( OPENAI_API_KEY=st.session_state["openaiKey"],
-                     GEMINI_API_KEY=st.session_state["geminiKey"],
-                     HF_TOKEN=st.session_state["hfToken"] )
-        analysis = ralf.analyze_problem_type(df, source_col, target_col)
+            if st.button("Start Training"):
+                try:
+                    with st.spinner("Training in progress..."):
+                        progress_bar = st.progress(0)
+                        ralf = Ralf(HF_TOKEN=hf_token, 
+                                  OPENAI_API_KEY=openai_key, 
+                                  GEMINI_API_KEY=gemini_key)
+                        total_models = len(st.session_state['selected_models'])
+                        for idx, model_id in enumerate(st.session_state['selected_models']):
+                            ralf.load_and_process_data(
+                                st.session_state['df'],
+                                st.session_state['source_col'],
+                                st.session_state['target_col'],
+                                model_id
+                            )
+                            ralf.load_and_configure_model()
+                            total_steps = epochs * (len(st.session_state['df']) // batch_size)
+                            current_step = 0
+                            def update_progress(step_info):
+                                nonlocal current_step
+                                current_step += 1
+                                progress = min((idx + current_step / total_steps) / total_models, 1.0)
+                                progress_bar.progress(progress)
+                            ralf.trainer.add_callback(update_progress)
+                            ralf.trainer.train()
+                        progress_bar.progress(1.0)
+                        st.success("Training completed for all recommended models!")
+                except Exception as e:
+                    st.error(f"Error during training: {str(e)}")
+        else:
+            st.info("Please analyze your dataset and get model recommendations first.")
 
-        # Display the stored results
-        print(f"# Analysis Results for {csv_file}:")
 
-        st.write("## Problem Type Analysis")
-        if isinstance(analysis, dict):
-            types = analysis.get('types', [])
-            st.write(f"**Types:** {', '.join(types)}")
-            st.write("**Reasoning:**")
-            st.write(analysis.get("reasoning", "No reasoning provided."))
-
-        llm_recommendations_df, dataset_recommendation_df, analysis_result = ralf.recommend(
-            input_csv_file=csv_file,
-            source_col=source_col,
-            target_col=target_col,
-            analysis=analysis
-        )
-
-        st.write("\n**Recommended Open Source LLMs for Fine-tuning:**")
-        st.write(llm_recommendations_df)
-
-        st.write("\n**Recommended Golden Dataset:**")
-        st.write(dataset_recommendation_df)
-
-    else:
-        st.info("Please complete the Setup tab first.")
-
-elif selected_tab == "Augment":
-    print("Entering Augment")
-    st.header("Augment")
-    st.write("Augmentation features coming soon.")
-
-elif selected_tab == "Lock-In":
-    print("Entering Lock0In")
-    st.header("Lock-In")
-    st.write("Lock-In features coming soon.")
-
-elif selected_tab == "Future-Proof":
-    print("Entering Future-Proof")
-    st.header("Future-Proof")
-    st.write("Future-Proof features coming soon.")
+if __name__ == "__main__":
+    main()
