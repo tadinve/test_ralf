@@ -1,4 +1,11 @@
 streamlit
-git+https://github.com/CloudKarya/ralf.git
 pandas
+scikit-learn
+datasets
+evaluate
 openai
+psutil
+transformers
+humanize
+google-generativeai
+nltk
